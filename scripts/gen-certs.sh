@@ -28,7 +28,9 @@ openssl x509 -req -in server.csr -CA ca-cert.pem -CAkey ca-key.pem -CAcreateseri
 chmod 640 server-key.pem
 if ! chgrp 10001 server-key.pem 2>/dev/null; then
   echo "==> Warning: could not chgrp server-key.pem to GID 10001 (need root/sudo)." >&2
-  echo "    Run 'sudo chgrp 10001 $CERT_DIR/server-key.pem' or 'docker run --group-add 10001 ...'" >&2
+  echo "    Run 'sudo chgrp 10001 $CERT_DIR/server-key.pem', or add the file's" >&2
+  echo "    current GID to the container, e.g.:" >&2
+  echo "    docker run --group-add \$(stat -c %g $CERT_DIR/server-key.pem) ..." >&2
 fi
 
 echo "==> Generating client cert"

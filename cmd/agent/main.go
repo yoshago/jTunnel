@@ -9,6 +9,8 @@ import (
 	"flag"
 	"io"
 	"log"
+	"net"
+	"time"
 
 	"github.com/yoshago/jTunnel/internal/muxsession"
 	"github.com/yoshago/jTunnel/internal/protocol"
@@ -24,6 +26,7 @@ const (
 	defaultCAFile     = "certs/ca-cert.pem"
 	defaultCertFile   = "certs/client-cert.pem"
 	defaultKeyFile    = "certs/client-key.pem"
+	defaultTimeout    = 10 * time.Second
 )
 
 func main() {
@@ -33,6 +36,7 @@ func main() {
 	caFile := flag.String("ca", defaultCAFile, "path to CA certificate")
 	certFile := flag.String("cert", defaultCertFile, "path to client certificate")
 	keyFile := flag.String("key", defaultKeyFile, "path to client private key")
+	timeout := flag.Duration("timeout", defaultTimeout, "timeout for dialing and for the request/response exchange")
 	flag.Parse()
 
 	// Step 1: build the mTLS client config - presents our client cert and
@@ -42,8 +46,10 @@ func main() {
 		log.Fatalf("load client tls config: %v", err)
 	}
 
-	// Step 2: open the raw mTLS connection to the relay's control port.
-	conn, err := tls.Dial("tcp", *addr, tlsCfg)
+	// Step 2: open the raw mTLS connection to the relay's control port, bounded
+	// by timeout so a stuck network path doesn't hang the agent forever.
+	dialer := &net.Dialer{Timeout: *timeout}
+	conn, err := tls.DialWithDialer(dialer, "tcp", *addr, tlsCfg)
 	if err != nil {
 		log.Fatalf("dial %s: %v", *addr, err)
 	}
@@ -75,6 +81,12 @@ func main() {
 		log.Fatalf("open stream: %v", err)
 	}
 	defer stream.Close()
+
+	// Bound the whole request/response exchange so a stalled relay can't hang
+	// the write or the io.ReadFull below indefinitely.
+	if err := stream.SetDeadline(time.Now().Add(*timeout)); err != nil {
+		log.Fatalf("set stream deadline: %v", err)
+	}
 
 	payload := []byte("Ping")
 	if _, err := stream.Write(payload); err != nil {
