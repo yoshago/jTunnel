@@ -57,6 +57,10 @@ func writeJSONLine(conn net.Conn, v interface{}) error {
 		return fmt.Errorf("marshal handshake message: %w", err)
 	}
 	data = append(data, '\n')
+	if err := conn.SetWriteDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		return fmt.Errorf("set write deadline: %w", err)
+	}
+	defer conn.SetWriteDeadline(time.Time{})
 	_, err = conn.Write(data)
 	return err
 }
