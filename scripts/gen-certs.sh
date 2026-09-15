@@ -23,6 +23,14 @@ EOF
 openssl x509 -req -in server.csr -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial \
   -out server-cert.pem -days "$DAYS" -sha256 -extfile server-ext.cnf
 
+# relayd runs in the container as UID/GID 10001 (see Dockerfile); make the key
+# group-readable by that GID without making it world-readable.
+chmod 640 server-key.pem
+if ! chgrp 10001 server-key.pem 2>/dev/null; then
+  echo "==> Warning: could not chgrp server-key.pem to GID 10001 (need root/sudo)." >&2
+  echo "    Run 'sudo chgrp 10001 $CERT_DIR/server-key.pem' or 'docker run --group-add 10001 ...'" >&2
+fi
+
 echo "==> Generating client cert"
 openssl genrsa -out client-key.pem 4096
 openssl req -new -key client-key.pem -subj "/CN=agent" -out client.csr

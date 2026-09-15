@@ -8,9 +8,9 @@ RUN CGO_ENABLED=0 go build -o /out/relayd ./cmd/relayd
 
 # --- runtime stage ---
 FROM alpine:3.20
-RUN adduser -D -u 10001 relayd
-# When running as USER relayd, the mounted server-key.pem must be readable by
-# UID 10001 or a group accessible to relayd; keep its permissions non-world-readable.
+RUN addgroup -g 10001 relayd && adduser -D -u 10001 -G relayd relayd
+# server-key.pem must be readable by UID 10001 or GID 10001 (see scripts/gen-certs.sh);
+# keep its permissions non-world-readable (e.g. 640, group relayd/10001).
 WORKDIR /app
 COPY --from=build /out/relayd ./relayd
 USER relayd
