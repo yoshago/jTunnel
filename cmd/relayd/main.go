@@ -115,6 +115,13 @@ func handleAgent(conn net.Conn, registry *tunnelRegistry) {
 		return
 	}
 
+	// The AgentID is caller-supplied and must not be trusted on its own: bind
+	// it to the identity proven by the client's mTLS certificate.
+	if err := tlsconfig.VerifyPeerCommonName(conn, hello.AgentID); err != nil {
+		log.Printf("reject agent %q: %v", hello.AgentID, err)
+		return
+	}
+
 	tunnelID := fmt.Sprintf("tunnel-%s", hello.AgentID)
 	if err := protocol.WriteAck(conn, protocol.Ack{TunnelID: tunnelID}); err != nil {
 		log.Printf("write ack: %v", err)

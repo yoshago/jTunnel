@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"os"
 )
 
@@ -49,6 +50,29 @@ func LoadClientTLSConfig(caFile, certFile, keyFile, serverName string) (*tls.Con
 		ServerName:   serverName,
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// VerifyPeerCommonName checks that conn is a TLS connection whose verified
+// peer (client) certificate has the given CommonName. It must be called only
+// after the handshake has completed (e.g. after the first Read/Write on
+// conn), and is the source of truth for peer identity: callers must not
+// trust any self-reported identity (such as an application-level AgentID)
+// without this check.
+func VerifyPeerCommonName(conn net.Conn, expected string) error {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return fmt.Errorf("connection is not TLS")
+	}
+
+	state := tlsConn.ConnectionState()
+	if !state.HandshakeComplete || len(state.PeerCertificates) == 0 {
+		return fmt.Errorf("no verified peer certificate")
+	}
+
+	if cn := state.PeerCertificates[0].Subject.CommonName; cn != expected {
+		return fmt.Errorf("peer certificate identity %q does not match claimed identity %q", cn, expected)
+	}
+	return nil
 }
 
 func loadCAPool(caFile string) (*x509.CertPool, error) {

@@ -22,7 +22,7 @@ import (
 const (
 	defaultAddr       = "127.0.0.1:9090"
 	defaultServerName = "localhost"
-	defaultAgentID    = "local-agent"
+	defaultAgentID    = "agent" // must match the client cert's CommonName (see gen-certs.sh)
 	defaultCAFile     = "certs/ca-cert.pem"
 	defaultCertFile   = "certs/client-cert.pem"
 	defaultKeyFile    = "certs/client-key.pem"
