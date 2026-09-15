@@ -12,6 +12,8 @@ import (
 	"log"
 	"net"
 	"sync"
+	"errors"
+	"time"
 
 	"github.com/hashicorp/yamux"
 	"github.com/yoshago/jTunnel/internal/muxsession"
@@ -54,7 +56,12 @@ func main() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				log.Printf("listener closed: %v", err)
+				return
+			}
 			log.Printf("accept error: %v", err)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 		go handleAgent(conn, registry)
