@@ -37,9 +37,11 @@ func TestHandshakeAndMuxRoundTrip(t *testing.T) {
 	}
 	defer ln.Close()
 
+	payload := []byte("Ping")
+
 	serverErrCh := make(chan error, 1)
 	go func() {
-		serverErrCh <- runServerSide(ln)
+		serverErrCh <- runServerSide(ln, len(payload))
 	}()
 
 	dialCtx, cancelDial := context.WithTimeout(context.Background(), 5*time.Second)
@@ -74,7 +76,6 @@ func TestHandshakeAndMuxRoundTrip(t *testing.T) {
 	}
 	defer stream.Close()
 
-	payload := []byte("Ping")
 	if _, err := stream.Write(payload); err != nil {
 		t.Fatalf("write payload: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestHandshakeAndMuxRoundTrip(t *testing.T) {
 
 // runServerSide accepts a single connection, performs the handshake, upgrades
 // to a Yamux server session, and echoes one stream's payload back.
-func runServerSide(ln net.Listener) error {
+func runServerSide(ln net.Listener, payloadLen int) error {
 	conn, err := ln.Accept()
 	if err != nil {
 		return err
@@ -120,13 +121,12 @@ func runServerSide(ln net.Listener) error {
 	}
 	defer stream.Close()
 
-	// Read whatever the client sent and echo it straight back; the client
-	// closes the stream once it has the reply, so we don't wait for EOF here.
-	buf := make([]byte, 4096)
-	n, err := stream.Read(buf)
-	if err != nil {
+	// The client may write the payload across multiple frames/reads, so read
+	// exactly the expected length before echoing it back.
+	buf := make([]byte, payloadLen)
+	if _, err := io.ReadFull(stream, buf); err != nil {
 		return err
 	}
-	_, err = stream.Write(buf[:n])
+	_, err = stream.Write(buf)
 	return err
 }
