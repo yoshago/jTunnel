@@ -36,7 +36,7 @@ func CopyHeader(dst, src http.Header) {
 // RemoveHopByHopHeaders strips connection-specific headers plus any headers
 // individually named by a Connection header value.
 func RemoveHopByHopHeaders(header http.Header) {
-	if connection := header.Get("Connection"); connection != "" {
+	for _, connection := range header.Values("Connection") {
 		for _, name := range strings.Split(connection, ",") {
 			header.Del(strings.TrimSpace(name))
 		}

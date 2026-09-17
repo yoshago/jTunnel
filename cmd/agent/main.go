@@ -66,7 +66,16 @@ func main() {
 	}
 	defer session.Close()
 
-	client := &http.Client{Timeout: *timeout}
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: *timeout}).DialContext,
+			ResponseHeaderTimeout: *timeout,
+			TLSHandshakeTimeout:   *timeout,
+		},
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 
 	log.Printf("forwarding tunneled requests to %s", *target)
 
