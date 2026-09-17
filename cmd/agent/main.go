@@ -1,17 +1,20 @@
 // Command agent is the CLI Agent: it dials the Relay Server over mTLS,
-// performs the handshake, upgrades to a Yamux session, opens a stream,
-// sends a "Ping" payload, and logs the echoed response to prove
-// end-to-end connectivity.
+// performs the handshake, upgrades to a Yamux session, and then accepts
+// streams opened by the Relay, forwarding each one as an HTTP request to a
+// local target (the Local Forwarder half of the L7 application proxy).
 package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"time"
 
+	"github.com/yoshago/jTunnel/internal/agentproxy"
 	"github.com/yoshago/jTunnel/internal/muxsession"
 	"github.com/yoshago/jTunnel/internal/protocol"
 	"github.com/yoshago/jTunnel/internal/tlsconfig"
@@ -27,6 +30,7 @@ const (
 	defaultCertFile   = "certs/client-cert.pem"
 	defaultKeyFile    = "certs/client-key.pem"
 	defaultTimeout    = 10 * time.Second
+	defaultTarget     = "http://127.0.0.1:5678" // mock n8n server
 )
 
 func main() {
@@ -36,7 +40,8 @@ func main() {
 	caFile := flag.String("ca", defaultCAFile, "path to CA certificate")
 	certFile := flag.String("cert", defaultCertFile, "path to client certificate")
 	keyFile := flag.String("key", defaultKeyFile, "path to client private key")
-	timeout := flag.Duration("timeout", defaultTimeout, "timeout for dialing and for the request/response exchange")
+	timeout := flag.Duration("timeout", defaultTimeout, "timeout for dialing and for the handshake")
+	target := flag.String("target", defaultTarget, "local target base URL to forward tunneled requests to")
 	flag.Parse()
 
 	// Step 1: build the mTLS client config - presents our client cert and
@@ -74,30 +79,23 @@ func main() {
 	}
 	defer session.Close()
 
-	// Step 5: open one stream over the session (like opening a new virtual
-	// connection) to prove the tunnel works end-to-end.
-	stream, err := session.Open()
-	if err != nil {
-		log.Fatalf("open stream: %v", err)
-	}
-	defer stream.Close()
+	client := &http.Client{Timeout: *timeout}
 
-	// Bound the whole request/response exchange so a stalled relay can't hang
-	// the write or the io.ReadFull below indefinitely.
-	if err := stream.SetDeadline(time.Now().Add(*timeout)); err != nil {
-		log.Fatalf("set stream deadline: %v", err)
-	}
+	log.Printf("forwarding tunneled requests to %s", *target)
 
-	payload := []byte("Ping")
-	if _, err := stream.Write(payload); err != nil {
-		log.Fatalf("write payload: %v", err)
+	// Each Accept() call yields one stream the Relay opened for a single
+	// public HTTP request; handle each concurrently since several may be
+	// in flight at once.
+	for {
+		stream, err := session.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				log.Printf("session closed: %v", err)
+				return
+			}
+			log.Printf("accept stream: %v", err)
+			return
+		}
+		go agentproxy.HandleStream(stream, *target, client)
 	}
-
-	// The relay's echoStream handler (see cmd/relayd) sends the same bytes back.
-	resp := make([]byte, len(payload))
-	if _, err := io.ReadFull(stream, resp); err != nil {
-		log.Fatalf("read echo: %v", err)
-	}
-
-	log.Printf("sent %q, received echo %q", payload, resp)
 }
