@@ -6,6 +6,7 @@ package agentproxy
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -39,6 +40,7 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	// forwarded with http.Client, which also forbids RequestURI being set.
 	req.URL.Scheme = targetURL.Scheme
 	req.URL.Host = targetURL.Host
+	req.URL.Path = joinURLPath(targetURL.Path, req.URL.Path)
 	req.Host = targetURL.Host
 	req.RequestURI = ""
 
@@ -55,20 +57,36 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	}
 }
 
+// joinURLPath combines a target base path with an incoming request path,
+// preserving the base path (e.g. "/api") instead of discarding it.
+func joinURLPath(base, reqPath string) string {
+	if base == "" {
+		return reqPath
+	}
+	baseSlash := strings.HasSuffix(base, "/")
+	pathSlash := strings.HasPrefix(reqPath, "/")
+	switch {
+	case baseSlash && pathSlash:
+		return base + reqPath[1:]
+	case !baseSlash && !pathSlash:
+		return base + "/" + reqPath
+	}
+	return base + reqPath
+}
+
 // writeErrorResponse best-effort reports a local forwarding failure back to
 // the Relay as a 502 so the public client gets a response instead of a hang.
 // The body is a fixed generic message; the real error is only logged locally.
 func writeErrorResponse(stream net.Conn, req *http.Request) {
 	resp := &http.Response{
 		StatusCode: http.StatusBadGateway,
-		Status:     http.StatusText(http.StatusBadGateway),
-		Proto:      "HTTP/1.1",
+		Status:     fmt.Sprintf("%d %s", http.StatusBadGateway, http.StatusText(http.StatusBadGateway)), Proto: "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
 		Request:    req,
 		Header:     make(http.Header),
 	}
-	body := "Bad Gateway"
+	body := http.StatusText(http.StatusBadGateway)
 	resp.Body = io.NopCloser(strings.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	if err := resp.Write(stream); err != nil {
