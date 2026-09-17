@@ -14,28 +14,19 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/yoshago/jTunnel/internal/constants"
 	"github.com/yoshago/jTunnel/internal/muxsession"
 	"github.com/yoshago/jTunnel/internal/protocol"
 	"github.com/yoshago/jTunnel/internal/relayproxy"
 	"github.com/yoshago/jTunnel/internal/tlsconfig"
 )
 
-// Default flag values; override via the corresponding CLI flag.
-const (
-	defaultAddr        = ":9090"
-	defaultPublicAddr  = ":8080"
-	defaultCAFile      = "certs/ca-cert.pem"
-	defaultCertFile    = "certs/server-cert.pem"
-	defaultKeyFile     = "certs/server-key.pem"
-	proxyStreamTimeout = 30 * time.Second
-)
-
 func main() {
-	addr := flag.String("addr", defaultAddr, "control listen address")
-	publicAddr := flag.String("public-addr", defaultPublicAddr, "public HTTP proxy listen address")
-	caFile := flag.String("ca", defaultCAFile, "path to CA certificate")
-	certFile := flag.String("cert", defaultCertFile, "path to server certificate")
-	keyFile := flag.String("key", defaultKeyFile, "path to server private key")
+	addr := flag.String("addr", constants.DefaultRelayAddr, "control listen address")
+	publicAddr := flag.String("public-addr", constants.DefaultPublicAddr, "public HTTP proxy listen address")
+	caFile := flag.String("ca", constants.DefaultCAFile, "path to CA certificate")
+	certFile := flag.String("cert", constants.DefaultServerCertFile, "path to server certificate")
+	keyFile := flag.String("key", constants.DefaultServerKeyFile, "path to server private key")
 	flag.Parse()
 
 	// Build the mTLS server config - requires and verifies an agent's client
@@ -59,12 +50,12 @@ func main() {
 		log.Printf("relayd public HTTP proxy listening on %s", *publicAddr)
 		publicServer := &http.Server{
 			Addr:    *publicAddr,
-			Handler: relayproxy.NewHandler(registry, proxyStreamTimeout),
+			Handler: relayproxy.NewHandler(registry, constants.ProxyStreamTimeout),
 			// WriteTimeout is intentionally left unset so long-running response
 			// streaming from the agent isn't cut short.
-			ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout:       proxyStreamTimeout,
-			IdleTimeout:       120 * time.Second,
+			ReadHeaderTimeout: constants.PublicReadHeaderTimeout,
+			ReadTimeout:       constants.ProxyStreamTimeout,
+			IdleTimeout:       constants.PublicIdleTimeout,
 		}
 		if err := publicServer.ListenAndServe(); err != nil {
 			log.Fatalf("public http server: %v", err)
@@ -108,7 +99,7 @@ func handleAgent(conn net.Conn, registry *relayproxy.Registry) {
 		return
 	}
 
-	tunnelID := fmt.Sprintf("tunnel-%s", hello.AgentID)
+	tunnelID := fmt.Sprintf("%s%s", constants.TunnelIDPrefix, hello.AgentID)
 	if err := protocol.WriteAck(conn, protocol.Ack{TunnelID: tunnelID}); err != nil {
 		log.Printf("write ack: %v", err)
 		return

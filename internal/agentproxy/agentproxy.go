@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/yoshago/jTunnel/internal/httputil"
 )
 
 // HandleStream reads one HTTP request from stream, forwards it to target
@@ -40,7 +42,7 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	// forwarded with http.Client, which also forbids RequestURI being set.
 	req.URL.Scheme = targetURL.Scheme
 	req.URL.Host = targetURL.Host
-	req.URL.Path = joinURLPath(targetURL.Path, req.URL.Path)
+	req.URL.Path = httputil.JoinURLPath(targetURL.Path, req.URL.Path)
 	req.Host = targetURL.Host
 	req.RequestURI = ""
 
@@ -55,23 +57,6 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	if err := resp.Write(stream); err != nil {
 		log.Printf("agentproxy: write response: %v", err)
 	}
-}
-
-// joinURLPath combines a target base path with an incoming request path,
-// preserving the base path (e.g. "/api") instead of discarding it.
-func joinURLPath(base, reqPath string) string {
-	if base == "" {
-		return reqPath
-	}
-	baseSlash := strings.HasSuffix(base, "/")
-	pathSlash := strings.HasPrefix(reqPath, "/")
-	switch {
-	case baseSlash && pathSlash:
-		return base + reqPath[1:]
-	case !baseSlash && !pathSlash:
-		return base + "/" + reqPath
-	}
-	return base + reqPath
 }
 
 // writeErrorResponse best-effort reports a local forwarding failure back to

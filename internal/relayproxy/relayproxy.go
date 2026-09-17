@@ -10,11 +10,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/yoshago/jTunnel/internal/httputil"
 )
 
 // Registry tracks the single active agent session for this MVP.
@@ -88,7 +88,7 @@ func NewHandler(registry *Registry, timeout time.Duration) http.Handler {
 		// don't leak from the public client's connection onto this hop.
 		outReq := r.Clone(r.Context())
 		outReq.Close = false
-		removeHopByHopHeaders(outReq.Header)
+		httputil.RemoveHopByHopHeaders(outReq.Header)
 
 		if err := outReq.Write(stream); err != nil {
 			http.Error(w, fmt.Sprintf("forward request: %v", err), http.StatusBadGateway)
@@ -111,48 +111,12 @@ func NewHandler(registry *Registry, timeout time.Duration) http.Handler {
 			}
 		}
 
-		removeHopByHopHeaders(resp.Header)
-		copyHeader(w.Header(), resp.Header)
+		httputil.RemoveHopByHopHeaders(resp.Header)
+		httputil.CopyHeader(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
 			// Status/headers are already flushed at this point; nothing left to do but log.
 			log.Printf("relayproxy: copy response body: %v", err)
 		}
 	})
-}
-
-func copyHeader(dst, src http.Header) {
-	for key, values := range src {
-		for _, v := range values {
-			dst.Add(key, v)
-		}
-	}
-}
-
-// hopByHopHeaders are connection-specific and must not be forwarded across a
-// proxy hop; each hop (public client<->relay, relay<->agent, agent<->target)
-// generates its own.
-var hopByHopHeaders = []string{
-	"Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"Proxy-Connection",
-	"Te",
-	"Trailer",
-	"Transfer-Encoding",
-	"Upgrade",
-}
-
-// removeHopByHopHeaders strips the fixed hop-by-hop set plus any headers
-// individually named by a Connection header value.
-func removeHopByHopHeaders(h http.Header) {
-	if connection := h.Get("Connection"); connection != "" {
-		for _, name := range strings.Split(connection, ",") {
-			h.Del(strings.TrimSpace(name))
-		}
-	}
-	for _, name := range hopByHopHeaders {
-		h.Del(name)
-	}
 }

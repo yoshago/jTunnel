@@ -12,36 +12,23 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/yoshago/jTunnel/internal/agentproxy"
+	"github.com/yoshago/jTunnel/internal/constants"
 	"github.com/yoshago/jTunnel/internal/muxsession"
 	"github.com/yoshago/jTunnel/internal/protocol"
 	"github.com/yoshago/jTunnel/internal/tlsconfig"
 )
 
-// Default flag values, suitable for a relayd running on localhost; override
-// via the corresponding CLI flag for anything else (e.g. a real relay host).
-const (
-	defaultAddr       = "127.0.0.1:9090"
-	defaultServerName = "localhost"
-	defaultAgentID    = "agent" // must match the client cert's CommonName (see gen-certs.sh)
-	defaultCAFile     = "certs/ca-cert.pem"
-	defaultCertFile   = "certs/client-cert.pem"
-	defaultKeyFile    = "certs/client-key.pem"
-	defaultTimeout    = 10 * time.Second
-	defaultTarget     = "http://127.0.0.1:5678" // mock n8n server
-)
-
 func main() {
-	addr := flag.String("addr", defaultAddr, "relay server control address")
-	serverName := flag.String("server-name", defaultServerName, "expected server certificate name")
-	agentID := flag.String("agent-id", defaultAgentID, "identifier reported to the relay server")
-	caFile := flag.String("ca", defaultCAFile, "path to CA certificate")
-	certFile := flag.String("cert", defaultCertFile, "path to client certificate")
-	keyFile := flag.String("key", defaultKeyFile, "path to client private key")
-	timeout := flag.Duration("timeout", defaultTimeout, "timeout for dialing and for the handshake")
-	target := flag.String("target", defaultTarget, "local target base URL to forward tunneled requests to")
+	addr := flag.String("addr", constants.DefaultAgentAddr, "relay server control address")
+	serverName := flag.String("server-name", constants.DefaultServerName, "expected server certificate name")
+	agentID := flag.String("agent-id", constants.DefaultAgentID, "identifier reported to the relay server")
+	caFile := flag.String("ca", constants.DefaultCAFile, "path to CA certificate")
+	certFile := flag.String("cert", constants.DefaultClientCertFile, "path to client certificate")
+	keyFile := flag.String("key", constants.DefaultClientKeyFile, "path to client private key")
+	timeout := flag.Duration("timeout", constants.AgentDialTimeout, "timeout for dialing and for the handshake")
+	target := flag.String("target", constants.DefaultTarget, "local target base URL to forward tunneled requests to")
 	flag.Parse()
 
 	// Step 1: build the mTLS client config - presents our client cert and
