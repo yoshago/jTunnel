@@ -65,7 +65,8 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 func writeErrorResponse(stream net.Conn, req *http.Request) {
 	resp := &http.Response{
 		StatusCode: http.StatusBadGateway,
-		Status:     fmt.Sprintf("%d %s", http.StatusBadGateway, http.StatusText(http.StatusBadGateway)), Proto: "HTTP/1.1",
+		Status:     fmt.Sprintf("%d %s", http.StatusBadGateway, http.StatusText(http.StatusBadGateway)),
+		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
 		Request:    req,

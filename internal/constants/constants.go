@@ -4,16 +4,21 @@ package constants
 import "time"
 
 const (
-	DefaultAgentAddr        = "127.0.0.1:9090"
-	DefaultRelayAddr        = ":9090"
-	DefaultPublicAddr       = ":8080"
-	DefaultServerName       = "localhost"
-	DefaultAgentID          = "agent"
-	DefaultCAFile           = "certs/ca-cert.pem"
-	DefaultClientCertFile   = "certs/client-cert.pem"
-	DefaultClientKeyFile    = "certs/client-key.pem"
-	DefaultServerCertFile   = "certs/server-cert.pem"
-	DefaultServerKeyFile    = "certs/server-key.pem"
+	DefaultAgentAddr      = "127.0.0.1:9090"
+	DefaultRelayAddr      = ":9090"
+	DefaultPublicAddr     = ":8080"
+	DefaultServerName     = "localhost"
+	DefaultAgentID        = "agent"
+	DefaultCAFile         = "certs/ca-cert.pem"
+	DefaultClientCertFile = "certs/client-cert.pem"
+	DefaultClientKeyFile  = "certs/client-key.pem"
+	DefaultServerCertFile = "certs/server-cert.pem"
+	DefaultServerKeyFile  = "certs/server-key.pem"
+	// The public HTTPS listener defaults to the same dev certs as the control
+	// channel; for real deployments these should be swapped for a publicly
+	// trusted cert (e.g. Let's Encrypt).
+	DefaultPublicCertFile   = "certs/server-cert.pem"
+	DefaultPublicKeyFile    = "certs/server-key.pem"
 	DefaultTarget           = "http://127.0.0.1:5678"
 	AgentDialTimeout        = 10 * time.Second
 	HandshakeTimeout        = 5 * time.Second

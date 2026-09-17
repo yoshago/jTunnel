@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -174,8 +176,17 @@ func TestL7HTTPProxyEndToEnd(t *testing.T) {
 	}
 	defer publicLn.Close()
 
-	publicServer := &http.Server{Handler: relayproxy.NewHandler(registry, 5*time.Second)}
-	go publicServer.Serve(publicLn)
+	// The public listener terminates its own TLS using the same dev server
+	// cert as the control channel; it's a separate hop from the mTLS tunnel.
+	publicTLSCert, err := tls.LoadX509KeyPair(certs.ServerCert, certs.ServerKey)
+	if err != nil {
+		t.Fatalf("load public tls keypair: %v", err)
+	}
+	publicServer := &http.Server{
+		Handler:   relayproxy.NewHandler(registry, 5*time.Second),
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{publicTLSCert}},
+	}
+	go publicServer.ServeTLS(publicLn, "", "")
 	defer publicServer.Close()
 
 	go acceptRelaySession(controlLn, registry)
@@ -225,8 +236,15 @@ func TestL7HTTPProxyEndToEnd(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// 4. Perform the real public HTTP GET and assert the body round-trips.
-	resp, err := http.Get(fmt.Sprintf("http://%s/webhook/test", publicLn.Addr().String()))
+	// 4. Perform the real public HTTPS GET and assert the body round-trips.
+	// The client trusts the same test CA the public listener's cert was
+	// signed by, mirroring how a real public client would trust a real cert.
+	publicHTTPSClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: publicCAPool(t, certs.CAFile), ServerName: "localhost"},
+		},
+	}
+	resp, err := publicHTTPSClient.Get(fmt.Sprintf("https://%s/webhook/test", publicLn.Addr().String()))
 	if err != nil {
 		t.Fatalf("public GET: %v", err)
 	}
@@ -287,4 +305,19 @@ func httptestServer(t *testing.T, body string) *httptest.Server {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(body))
 	}))
+}
+
+// publicCAPool loads caFile into a cert pool, used to make the test's public
+// HTTPS client trust the public listener's cert rather than skipping verification.
+func publicCAPool(t *testing.T, caFile string) *x509.CertPool {
+	t.Helper()
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		t.Fatalf("read CA file: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemBytes) {
+		t.Fatalf("no certificates found in %s", caFile)
+	}
+	return pool
 }

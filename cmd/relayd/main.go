@@ -23,10 +23,12 @@ import (
 
 func main() {
 	addr := flag.String("addr", constants.DefaultRelayAddr, "control listen address")
-	publicAddr := flag.String("public-addr", constants.DefaultPublicAddr, "public HTTP proxy listen address")
+	publicAddr := flag.String("public-addr", constants.DefaultPublicAddr, "public HTTPS proxy listen address")
 	caFile := flag.String("ca", constants.DefaultCAFile, "path to CA certificate")
 	certFile := flag.String("cert", constants.DefaultServerCertFile, "path to server certificate")
 	keyFile := flag.String("key", constants.DefaultServerKeyFile, "path to server private key")
+	publicCertFile := flag.String("public-cert", constants.DefaultPublicCertFile, "path to public HTTPS listener certificate")
+	publicKeyFile := flag.String("public-key", constants.DefaultPublicKeyFile, "path to public HTTPS listener private key")
 	flag.Parse()
 
 	// Build the mTLS server config - requires and verifies an agent's client
@@ -44,10 +46,11 @@ func main() {
 
 	registry := &relayproxy.Registry{}
 
-	// The public HTTP proxy runs alongside the mTLS control listener: each
-	// request it receives is forwarded to the currently connected agent.
+	// The public HTTPS proxy runs alongside the mTLS control listener: each
+	// request it receives is forwarded to the currently connected agent. It
+	// terminates its own TLS, independent of the control channel's mTLS.
 	go func() {
-		log.Printf("relayd public HTTP proxy listening on %s", *publicAddr)
+		log.Printf("relayd public HTTPS proxy listening on %s", *publicAddr)
 		publicServer := &http.Server{
 			Addr:    *publicAddr,
 			Handler: relayproxy.NewHandler(registry, constants.ProxyStreamTimeout),
@@ -57,8 +60,8 @@ func main() {
 			ReadTimeout:       constants.ProxyStreamTimeout,
 			IdleTimeout:       constants.PublicIdleTimeout,
 		}
-		if err := publicServer.ListenAndServe(); err != nil {
-			log.Fatalf("public http server: %v", err)
+		if err := publicServer.ListenAndServeTLS(*publicCertFile, *publicKeyFile); err != nil {
+			log.Fatalf("public https server: %v", err)
 		}
 	}()
 
