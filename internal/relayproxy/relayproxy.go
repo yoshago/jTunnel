@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,7 +84,13 @@ func NewHandler(registry *Registry, timeout time.Duration) http.Handler {
 			}
 		}
 
-		if err := r.Write(stream); err != nil {
+		// Write a header-only copy so hop-by-hop headers and framing (Close)
+		// don't leak from the public client's connection onto this hop.
+		outReq := r.Clone(r.Context())
+		outReq.Close = false
+		removeHopByHopHeaders(outReq.Header)
+
+		if err := outReq.Write(stream); err != nil {
 			http.Error(w, fmt.Sprintf("forward request: %v", err), http.StatusBadGateway)
 			return
 		}
@@ -95,6 +102,16 @@ func NewHandler(registry *Registry, timeout time.Duration) http.Handler {
 		}
 		defer resp.Body.Close()
 
+		// Give body streaming its own fresh bounded window rather than reusing
+		// whatever remains of the request/header deadline.
+		if timeout > 0 {
+			if err := stream.SetDeadline(time.Now().Add(timeout)); err != nil {
+				http.Error(w, fmt.Sprintf("reset stream deadline: %v", err), http.StatusBadGateway)
+				return
+			}
+		}
+
+		removeHopByHopHeaders(resp.Header)
 		copyHeader(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)
 		if _, err := io.Copy(w, resp.Body); err != nil {
@@ -109,5 +126,33 @@ func copyHeader(dst, src http.Header) {
 		for _, v := range values {
 			dst.Add(key, v)
 		}
+	}
+}
+
+// hopByHopHeaders are connection-specific and must not be forwarded across a
+// proxy hop; each hop (public client<->relay, relay<->agent, agent<->target)
+// generates its own.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Proxy-Connection",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// removeHopByHopHeaders strips the fixed hop-by-hop set plus any headers
+// individually named by a Connection header value.
+func removeHopByHopHeaders(h http.Header) {
+	if connection := h.Get("Connection"); connection != "" {
+		for _, name := range strings.Split(connection, ",") {
+			h.Del(strings.TrimSpace(name))
+		}
+	}
+	for _, name := range hopByHopHeaders {
+		h.Del(name)
 	}
 }

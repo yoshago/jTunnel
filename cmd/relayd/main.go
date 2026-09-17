@@ -57,7 +57,15 @@ func main() {
 	// request it receives is forwarded to the currently connected agent.
 	go func() {
 		log.Printf("relayd public HTTP proxy listening on %s", *publicAddr)
-		if err := http.ListenAndServe(*publicAddr, relayproxy.NewHandler(registry, proxyStreamTimeout)); err != nil {
+		publicServer := &http.Server{
+			Addr:    *publicAddr,
+			Handler: relayproxy.NewHandler(registry, proxyStreamTimeout),
+			// WriteTimeout is intentionally left unset so long-running response
+			// streaming from the agent isn't cut short.
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		if err := publicServer.ListenAndServe(); err != nil {
 			log.Fatalf("public http server: %v", err)
 		}
 	}()

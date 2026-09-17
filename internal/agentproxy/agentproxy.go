@@ -6,7 +6,6 @@ package agentproxy
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -45,7 +44,8 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		writeErrorResponse(stream, req, err)
+		log.Printf("agentproxy: forward to local target: %v", err)
+		writeErrorResponse(stream, req)
 		return
 	}
 	defer resp.Body.Close()
@@ -57,7 +57,8 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 
 // writeErrorResponse best-effort reports a local forwarding failure back to
 // the Relay as a 502 so the public client gets a response instead of a hang.
-func writeErrorResponse(stream net.Conn, req *http.Request, forwardErr error) {
+// The body is a fixed generic message; the real error is only logged locally.
+func writeErrorResponse(stream net.Conn, req *http.Request) {
 	resp := &http.Response{
 		StatusCode: http.StatusBadGateway,
 		Status:     http.StatusText(http.StatusBadGateway),
@@ -67,7 +68,7 @@ func writeErrorResponse(stream net.Conn, req *http.Request, forwardErr error) {
 		Request:    req,
 		Header:     make(http.Header),
 	}
-	body := fmt.Sprintf("forward to local target: %v", forwardErr)
+	body := "Bad Gateway"
 	resp.Body = io.NopCloser(strings.NewReader(body))
 	resp.ContentLength = int64(len(body))
 	if err := resp.Write(stream); err != nil {
