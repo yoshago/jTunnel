@@ -63,6 +63,7 @@ func main() {
 			// WriteTimeout is intentionally left unset so long-running response
 			// streaming from the agent isn't cut short.
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       proxyStreamTimeout,
 			IdleTimeout:       120 * time.Second,
 		}
 		if err := publicServer.ListenAndServe(); err != nil {
