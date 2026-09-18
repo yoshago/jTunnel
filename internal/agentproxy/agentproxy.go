@@ -43,6 +43,7 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	req.URL.Scheme = targetURL.Scheme
 	req.URL.Host = targetURL.Host
 	req.URL.Path = httputil.JoinURLPath(targetURL.Path, req.URL.Path)
+	req.URL.RawPath = httputil.JoinURLPath(targetURL.EscapedPath(), req.URL.EscapedPath())
 	req.Host = targetURL.Host
 	req.RequestURI = ""
 

@@ -162,7 +162,11 @@ func setForwardingHeaders(outReq, incoming *http.Request) {
 		proto = "https"
 	}
 
-	outReq.Header.Set("Forwarded", fmt.Sprintf("for=%s;host=%s;proto=%s", clientIP, incoming.Host, proto))
+	forwardedClientIp := clientIP
+	if ip := net.ParseIP(clientIP); ip != nil && ip.To4() == nil {
+		forwardedClientIp = "[" + ip.String() + "]"
+	}
+	outReq.Header.Set("Forwarded", fmt.Sprintf("for=%q;host=%q;proto=%s", forwardedClientIp, incoming.Host, proto))
 	outReq.Header.Set("X-Forwarded-For", clientIP)
 	outReq.Header.Set("X-Forwarded-Host", incoming.Host)
 	outReq.Header.Set("X-Forwarded-Proto", proto)
