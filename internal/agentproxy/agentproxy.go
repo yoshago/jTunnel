@@ -29,7 +29,7 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 		return
 	}
 
-	log.Printf("Received request: %s %s", req.Method, req.URL)
+	log.Printf("Received request: %s %s", req.Method, req.URL.EscapedPath())
 
 	targetURL, err := url.Parse(target)
 	if err != nil {
