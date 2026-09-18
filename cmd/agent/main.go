@@ -1,42 +1,34 @@
 // Command agent is the CLI Agent: it dials the Relay Server over mTLS,
-// performs the handshake, upgrades to a Yamux session, opens a stream,
-// sends a "Ping" payload, and logs the echoed response to prove
-// end-to-end connectivity.
+// performs the handshake, upgrades to a Yamux session, and then accepts
+// streams opened by the Relay, forwarding each one as an HTTP request to a
+// local target (the Local Forwarder half of the L7 application proxy).
 package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"io"
 	"log"
 	"net"
-	"time"
+	"net/http"
 
+	"github.com/yoshago/jTunnel/internal/agentproxy"
+	"github.com/yoshago/jTunnel/internal/constants"
 	"github.com/yoshago/jTunnel/internal/muxsession"
 	"github.com/yoshago/jTunnel/internal/protocol"
 	"github.com/yoshago/jTunnel/internal/tlsconfig"
 )
 
-// Default flag values, suitable for a relayd running on localhost; override
-// via the corresponding CLI flag for anything else (e.g. a real relay host).
-const (
-	defaultAddr       = "127.0.0.1:9090"
-	defaultServerName = "localhost"
-	defaultAgentID    = "agent" // must match the client cert's CommonName (see gen-certs.sh)
-	defaultCAFile     = "certs/ca-cert.pem"
-	defaultCertFile   = "certs/client-cert.pem"
-	defaultKeyFile    = "certs/client-key.pem"
-	defaultTimeout    = 10 * time.Second
-)
-
 func main() {
-	addr := flag.String("addr", defaultAddr, "relay server control address")
-	serverName := flag.String("server-name", defaultServerName, "expected server certificate name")
-	agentID := flag.String("agent-id", defaultAgentID, "identifier reported to the relay server")
-	caFile := flag.String("ca", defaultCAFile, "path to CA certificate")
-	certFile := flag.String("cert", defaultCertFile, "path to client certificate")
-	keyFile := flag.String("key", defaultKeyFile, "path to client private key")
-	timeout := flag.Duration("timeout", defaultTimeout, "timeout for dialing and for the request/response exchange")
+	addr := flag.String("addr", constants.DefaultAgentAddr, "relay server control address")
+	serverName := flag.String("server-name", constants.DefaultServerName, "expected server certificate name")
+	agentID := flag.String("agent-id", constants.DefaultAgentID, "identifier reported to the relay server")
+	caFile := flag.String("ca", constants.DefaultCAFile, "path to CA certificate")
+	certFile := flag.String("cert", constants.DefaultClientCertFile, "path to client certificate")
+	keyFile := flag.String("key", constants.DefaultClientKeyFile, "path to client private key")
+	timeout := flag.Duration("timeout", constants.AgentDialTimeout, "timeout for dialing and for the handshake")
+	target := flag.String("target", constants.DefaultTarget, "local target base URL to forward tunneled requests to")
 	flag.Parse()
 
 	// Step 1: build the mTLS client config - presents our client cert and
@@ -74,30 +66,32 @@ func main() {
 	}
 	defer session.Close()
 
-	// Step 5: open one stream over the session (like opening a new virtual
-	// connection) to prove the tunnel works end-to-end.
-	stream, err := session.Open()
-	if err != nil {
-		log.Fatalf("open stream: %v", err)
-	}
-	defer stream.Close()
-
-	// Bound the whole request/response exchange so a stalled relay can't hang
-	// the write or the io.ReadFull below indefinitely.
-	if err := stream.SetDeadline(time.Now().Add(*timeout)); err != nil {
-		log.Fatalf("set stream deadline: %v", err)
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: *timeout}).DialContext,
+			ResponseHeaderTimeout: *timeout,
+			TLSHandshakeTimeout:   *timeout,
+		},
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
-	payload := []byte("Ping")
-	if _, err := stream.Write(payload); err != nil {
-		log.Fatalf("write payload: %v", err)
-	}
+	log.Printf("forwarding tunneled requests to %s", *target)
 
-	// The relay's echoStream handler (see cmd/relayd) sends the same bytes back.
-	resp := make([]byte, len(payload))
-	if _, err := io.ReadFull(stream, resp); err != nil {
-		log.Fatalf("read echo: %v", err)
+	// Each Accept() call yields one stream the Relay opened for a single
+	// public HTTP request; handle each concurrently since several may be
+	// in flight at once.
+	for {
+		stream, err := session.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
+				log.Printf("session closed: %v", err)
+				return
+			}
+			log.Printf("accept stream: %v", err)
+			return
+		}
+		go agentproxy.HandleStream(stream, *target, client)
 	}
-
-	log.Printf("sent %q, received echo %q", payload, resp)
 }

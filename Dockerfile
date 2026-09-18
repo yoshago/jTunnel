@@ -14,7 +14,7 @@ RUN addgroup -g 10001 relayd && adduser -D -u 10001 -G relayd relayd
 WORKDIR /app
 COPY --from=build /out/relayd ./relayd
 USER relayd
-EXPOSE 9090
+EXPOSE 9090 8080
 # certs/ is not baked into the image; mount it at runtime, e.g.:
 #   docker run -v $(pwd)/certs:/app/certs:ro ...
-ENTRYPOINT ["./relayd", "-addr=:9090", "-ca=certs/ca-cert.pem", "-cert=certs/server-cert.pem", "-key=certs/server-key.pem"]
+ENTRYPOINT ["./relayd", "-addr=:9090", "-public-addr=:8080", "-ca=certs/ca-cert.pem", "-cert=certs/server-cert.pem", "-key=certs/server-key.pem"]
