@@ -43,7 +43,12 @@ func HandleStream(stream net.Conn, target string, client *http.Client) {
 	req.URL.Scheme = targetURL.Scheme
 	req.URL.Host = targetURL.Host
 	req.URL.Path = httputil.JoinURLPath(targetURL.Path, req.URL.Path)
-	req.URL.RawPath = httputil.JoinURLPath(targetURL.EscapedPath(), req.URL.EscapedPath())
+	joinedRawPath := httputil.JoinURLPath(targetURL.EscapedPath(), req.URL.EscapedPath())
+	if decoded, err := url.PathUnescape(joinedRawPath); err == nil && decoded == req.URL.Path {
+		req.URL.RawPath = joinedRawPath
+	} else {
+		req.URL.RawPath = ""
+	}
 	req.Host = targetURL.Host
 	req.RequestURI = ""
 
