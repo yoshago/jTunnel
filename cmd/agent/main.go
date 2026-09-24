@@ -31,15 +31,11 @@ func main() {
 	target := flag.String("target", constants.DefaultTarget, "local target base URL to forward tunneled requests to")
 	flag.Parse()
 
-	// Step 1: build the mTLS client config - presents our client cert and
-	// verifies the relay's server cert against the shared CA.
 	tlsCfg, err := tlsconfig.LoadClientTLSConfig(*caFile, *certFile, *keyFile, *serverName)
 	if err != nil {
 		log.Fatalf("load client tls config: %v", err)
 	}
 
-	// Step 2: open the raw mTLS connection to the relay's control port, bounded
-	// by timeout so a stuck network path doesn't hang the agent forever.
 	dialer := &net.Dialer{Timeout: *timeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", *addr, tlsCfg)
 	if err != nil {
@@ -47,8 +43,6 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Step 3: application-level handshake (plain JSON, pre-mux) - identify
-	// ourselves and receive the tunnel id the relay assigned us.
 	if err := protocol.WriteHello(conn, protocol.Hello{AgentID: *agentID}); err != nil {
 		log.Fatalf("write hello: %v", err)
 	}
@@ -58,8 +52,6 @@ func main() {
 	}
 	log.Printf("connected, assigned tunnel id %q", ack.TunnelID)
 
-	// Step 4: upgrade the single TCP connection to a Yamux session, which lets
-	// many independent logical streams share it concurrently.
 	session, err := muxsession.NewClientSession(conn)
 	if err != nil {
 		log.Fatalf("new client session: %v", err)

@@ -54,11 +54,22 @@ func GenerateCerts(t *testing.T, dir string) Certs {
 
 	serverCert := filepath.Join(dir, "server-cert.pem")
 	serverKey := filepath.Join(dir, "server-key.pem")
-	issueLeaf(t, caTemplate, caKey, "relayd", []string{"127.0.0.1", "localhost"}, x509.ExtKeyUsageServerAuth, serverCert, serverKey)
+	issueLeaf(t, caTemplate, caKey, leafOptions{
+		cn:          "relayd",
+		sanIPsOrDNS: []string{"127.0.0.1", "localhost"},
+		keyUsage:    x509.ExtKeyUsageServerAuth,
+		certPath:    serverCert,
+		keyPath:     serverKey,
+	})
 
 	clientCert := filepath.Join(dir, "client-cert.pem")
 	clientKey := filepath.Join(dir, "client-key.pem")
-	issueLeaf(t, caTemplate, caKey, "agent", nil, x509.ExtKeyUsageClientAuth, clientCert, clientKey)
+	issueLeaf(t, caTemplate, caKey, leafOptions{
+		cn:       "agent",
+		keyUsage: x509.ExtKeyUsageClientAuth,
+		certPath: clientCert,
+		keyPath:  clientKey,
+	})
 
 	return Certs{
 		CAFile:     caFile,
@@ -69,7 +80,15 @@ func GenerateCerts(t *testing.T, dir string) Certs {
 	}
 }
 
-func issueLeaf(t *testing.T, caTemplate *x509.Certificate, caKey *rsa.PrivateKey, cn string, sanIPsOrDNS []string, keyUsage x509.ExtKeyUsage, certPath, keyPath string) {
+type leafOptions struct {
+	cn          string
+	sanIPsOrDNS []string
+	keyUsage    x509.ExtKeyUsage
+	certPath    string
+	keyPath     string
+}
+
+func issueLeaf(t *testing.T, caTemplate *x509.Certificate, caKey *rsa.PrivateKey, opts leafOptions) {
 	t.Helper()
 
 	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -78,13 +97,13 @@ func issueLeaf(t *testing.T, caTemplate *x509.Certificate, caKey *rsa.PrivateKey
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
-		Subject:      pkix.Name{CommonName: cn},
+		Subject:      pkix.Name{CommonName: opts.cn},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{keyUsage},
+		ExtKeyUsage:  []x509.ExtKeyUsage{opts.keyUsage},
 	}
-	for _, s := range sanIPsOrDNS {
+	for _, s := range opts.sanIPsOrDNS {
 		if ip := net.ParseIP(s); ip != nil {
 			template.IPAddresses = append(template.IPAddresses, ip)
 		} else {
@@ -94,13 +113,13 @@ func issueLeaf(t *testing.T, caTemplate *x509.Certificate, caKey *rsa.PrivateKey
 
 	der, err := x509.CreateCertificate(rand.Reader, template, caTemplate, &leafKey.PublicKey, caKey)
 	if err != nil {
-		t.Fatalf("create leaf cert for %s: %v", cn, err)
+		t.Fatalf("create leaf cert for %s: %v", opts.cn, err)
 	}
 
-	writePEM(t, certPath, "CERTIFICATE", der)
+	writePEM(t, opts.certPath, "CERTIFICATE", der)
 
 	keyDER := x509.MarshalPKCS1PrivateKey(leafKey)
-	writePEM(t, keyPath, "RSA PRIVATE KEY", keyDER)
+	writePEM(t, opts.keyPath, "RSA PRIVATE KEY", keyDER)
 }
 
 func writePEM(t *testing.T, path, blockType string, der []byte) {
