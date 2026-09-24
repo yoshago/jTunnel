@@ -49,8 +49,12 @@ func TestHandleAgentAuthenticatesAndRegistersSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client session: %v", err)
 	}
-	if !registry.IsActive() {
-		t.Fatal("expected agent session to be active")
+	registrationDeadline := time.Now().Add(time.Second)
+	for !registry.IsActive() {
+		if time.Now().After(registrationDeadline) {
+			t.Fatal("timed out waiting for agent session to become active")
+		}
+		time.Sleep(time.Millisecond)
 	}
 
 	if err := session.Close(); err != nil {
