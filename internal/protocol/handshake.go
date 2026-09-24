@@ -10,11 +10,8 @@ import (
 	"io"
 	"net"
 	"time"
-)
 
-const (
-	maxHandshakeSize = 4096
-	handshakeTimeout = 5 * time.Second
+	"github.com/yoshago/jTunnel/internal/constants"
 )
 
 // Hello is sent by the Agent right after the mTLS handshake completes.
@@ -57,7 +54,7 @@ func writeJSONLine(conn net.Conn, v interface{}) error {
 		return fmt.Errorf("marshal handshake message: %w", err)
 	}
 	data = append(data, '\n')
-	if err := conn.SetWriteDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(constants.HandshakeTimeout)); err != nil {
 		return fmt.Errorf("set write deadline: %w", err)
 	}
 	defer conn.SetWriteDeadline(time.Time{})
@@ -69,12 +66,12 @@ func writeJSONLine(conn net.Conn, v interface{}) error {
 // buffering bytes belonging to the Yamux session that starts right after this call.
 // A deadline and a size cap guard against a stalled or malicious peer.
 func readJSONLine(conn net.Conn, v interface{}) error {
-	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(constants.HandshakeTimeout)); err != nil {
 		return fmt.Errorf("set read deadline: %w", err)
 	}
 	defer conn.SetReadDeadline(time.Time{})
 
-	limited := io.LimitReader(conn, maxHandshakeSize)
+	limited := io.LimitReader(conn, constants.MaxHandshakeSize)
 	var buf bytes.Buffer
 	one := make([]byte, 1)
 	for {
@@ -86,8 +83,8 @@ func readJSONLine(conn net.Conn, v interface{}) error {
 			buf.WriteByte(one[0])
 		}
 		if err != nil {
-			if err == io.EOF && buf.Len() >= maxHandshakeSize {
-				return fmt.Errorf("handshake message exceeds %d bytes", maxHandshakeSize)
+			if err == io.EOF && buf.Len() >= constants.MaxHandshakeSize {
+				return fmt.Errorf("handshake message exceeds %d bytes", constants.MaxHandshakeSize)
 			}
 			return fmt.Errorf("read handshake message: %w", err)
 		}

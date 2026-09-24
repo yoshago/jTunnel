@@ -3,16 +3,16 @@ package muxsession
 
 import (
 	"net"
-	"time"
 
 	"github.com/hashicorp/yamux"
+	"github.com/yoshago/jTunnel/internal/constants"
 )
 
 func config() *yamux.Config {
 	cfg := yamux.DefaultConfig()
 	cfg.EnableKeepAlive = true
-	cfg.KeepAliveInterval = 30 * time.Second
-	cfg.ConnectionWriteTimeout = 10 * time.Second
+	cfg.KeepAliveInterval = constants.YamuxKeepAliveInterval
+	cfg.ConnectionWriteTimeout = constants.YamuxWriteTimeout
 	return cfg
 }
 
