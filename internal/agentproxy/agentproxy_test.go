@@ -88,6 +88,42 @@ func TestHandleStreamReturnsBadGatewayWhenTargetFails(t *testing.T) {
 	<-done
 }
 
+func TestHandleStreamRejectsMalformedRequest(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		HandleStream(serverConn, "http://target.invalid", http.DefaultClient)
+		close(done)
+	}()
+
+	if _, err := clientConn.Write([]byte("not an HTTP request\r\n\r\n")); err != nil {
+		t.Fatalf("write malformed request: %v", err)
+	}
+	<-done
+}
+
+func TestHandleStreamRejectsInvalidTargetURL(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	done := make(chan struct{})
+	go func() {
+		HandleStream(serverConn, "://invalid", http.DefaultClient)
+		close(done)
+	}()
+
+	req, err := http.NewRequest(http.MethodGet, "http://relay.local/webhook", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if err := req.Write(clientConn); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	<-done
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
